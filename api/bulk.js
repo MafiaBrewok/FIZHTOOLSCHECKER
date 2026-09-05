@@ -160,8 +160,22 @@ async function checkCookie(cookie) {
             if (robuxRes.ok) {
                 const robuxData = await robuxRes.json();
                 robux = robuxData.robux || 0;
+            } else {
+                const fallbackRes = await fetch('https://www.roblox.com/mobileapi/userinfo', { headers });
+                if (fallbackRes.ok) {
+                    const fallbackData = await fallbackRes.json();
+                    robux = fallbackData.RobuxBalance || 0;
+                }
             }
-        } catch (e) {}
+        } catch (e) {
+            try {
+                const fallbackRes = await fetch('https://www.roblox.com/mobileapi/userinfo', { headers });
+                if (fallbackRes.ok) {
+                    const fallbackData = await fallbackRes.json();
+                    robux = fallbackData.RobuxBalance || 0;
+                }
+            } catch (e2) {}
+        }
 
         let rap = 0, itemCount = 0;
         try {
@@ -226,6 +240,23 @@ async function checkCookie(cookie) {
                 twoFactorEnabled = !!twoFAMatch;
             }
         } catch (e) {}
+
+        if (email === 'N/A') {
+            try {
+                const emailRes = await fetch(`https://users.roblox.com/v1/users/${userID}`, { headers });
+                if (emailRes.ok) {
+                    const emailData = await emailRes.json();
+                    if (emailData.email) {
+                        email = emailData.email;
+                        if (email && email.includes('@')) {
+                            const [local, domain] = email.split('@');
+                            email = local.charAt(0) + '*******@' + domain;
+                        }
+                        emailVerified = true;
+                    }
+                }
+            } catch (e) {}
+        }
 
         try {
             const birthRes = await fetch(`https://users.roblox.com/v1/users/${userID}`, { headers });
